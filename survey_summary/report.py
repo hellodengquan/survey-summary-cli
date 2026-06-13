@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import csv
+import io
 from datetime import datetime
-from typing import TextIO
+from typing import Literal, TextIO
 
 from survey_summary.models import SurveyData
 from survey_summary.segment import SegmentResult, segment_stats
@@ -13,18 +15,110 @@ def generate_report(
     segments: list[SegmentResult],
     anomalies: list[Anomaly],
     output: TextIO | None = None,
+    fmt: Literal["text", "csv"] = "text",
+) -> str:
+    if fmt == "csv":
+        text = _generate_csv(survey, segments, anomalies)
+    else:
+        text = _generate_text(survey, segments, anomalies)
+
+    if output is not None:
+        output.write(text)
+    return text
+
+
+def _generate_text(
+    survey: SurveyData,
+    segments: list[SegmentResult],
+    anomalies: list[Anomaly],
 ) -> str:
     lines: list[str] = []
-
     _header(lines, survey)
     _segment_section(lines, segments)
     _anomaly_section(lines, anomalies)
     _footer(lines)
+    return "\n".join(lines)
 
-    text = "\n".join(lines)
-    if output is not None:
-        output.write(text)
-    return text
+
+def _generate_csv(
+    survey: SurveyData,
+    segments: list[SegmentResult],
+    anomalies: list[Anomaly],
+) -> str:
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+
+    writer.writerow(["[问卷概况]"])
+    writer.writerow(["总作答数", survey.row_count])
+    writer.writerow(["题目数", len(survey.questions)])
+    writer.writerow([])
+
+    writer.writerow(["[分段统计]"])
+    for seg in segments:
+        writer.writerow([])
+        if seg.qtype == "numeric":
+            writer.writerow([
+                "题目编号", "题目名称", "类型", "有效数", "缺失数",
+                "均值", "标准差", "最小值", "Q1", "中位数", "Q3", "最大值",
+            ])
+            s = seg.stats
+            writer.writerow([
+                seg.question, seg.label, seg.qtype,
+                seg.total - seg.missing, seg.missing,
+                s["mean"], s["std"], s["min"], s["q1"], s["median"], s["q3"], s["max"],
+            ])
+        elif seg.qtype == "categorical":
+            writer.writerow([
+                "题目编号", "题目名称", "类型", "有效数", "缺失数",
+                "选项", "频次", "百分比",
+            ])
+            s = seg.stats
+            for opt, info in s["frequencies"].items():
+                writer.writerow([
+                    seg.question, seg.label, seg.qtype,
+                    seg.total - seg.missing, seg.missing,
+                    opt, info["count"], info["pct"],
+                ])
+        else:
+            writer.writerow([
+                "题目编号", "题目名称", "类型", "有效数", "缺失数",
+                "唯一数", "平均长度", "最大长度",
+            ])
+            s = seg.stats
+            writer.writerow([
+                seg.question, seg.label, seg.qtype,
+                seg.total - seg.missing, seg.missing,
+                s["unique"], s["avg_len"], s["max_len"],
+            ])
+
+    writer.writerow([])
+    writer.writerow(["[异常答案标记]"])
+    writer.writerow(["题目编号", "检测类型", "严重程度"])
+    if not anomalies:
+        writer.writerow(["-", "-", "-"])
+    else:
+        reason_labels = {
+            "straight_lining": "直线作答",
+            "numeric_outlier": "数值离群",
+            "high_missing": "高缺失率",
+        }
+        for a in anomalies:
+            severity = _severity(a)
+            writer.writerow([
+                a.row_index,
+                reason_labels.get(a.reason, a.reason),
+                severity,
+            ])
+
+    return buf.getvalue()
+
+
+def _severity(anomaly: Anomaly) -> str:
+    if anomaly.reason == "numeric_outlier":
+        return "高"
+    if anomaly.reason == "straight_lining":
+        return "中"
+    return "低"
 
 
 def _header(lines: list[str], survey: SurveyData) -> None:

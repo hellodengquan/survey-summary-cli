@@ -23,12 +23,17 @@ console = Console()
 def summary(
     file: Path = typer.Argument(..., exists=True, help="问卷 CSV 数据文件路径"),
     output: Optional[Path] = typer.Option(None, "-o", "--output", help="报告输出文件路径（默认输出到终端）"),
+    format: str = typer.Option("text", "-f", "--format", help="输出格式：text 或 csv"),
     encoding: str = typer.Option("utf-8", "-e", "--encoding", help="CSV 文件编码"),
     straight_line: float = typer.Option(0.95, "--straight-line", help="直线作答检测阈值（0~1）"),
     zscore: float = typer.Option(3.0, "--zscore", help="数值离群 Z-score 阈值"),
     missing_ratio: float = typer.Option(0.6, "--missing-ratio", help="高缺失率检测阈值（0~1）"),
 ) -> None:
     """生成问卷归纳报告：分段统计 + 异常标记"""
+    if format not in ("text", "csv"):
+        console.print(f"[red]不支持的格式: {format}，请使用 text 或 csv[/red]")
+        raise typer.Exit(code=1)
+
     df = load_csv(file, encoding=encoding)
     survey = build_survey(df)
 
@@ -41,11 +46,11 @@ def summary(
     )
 
     if output is not None:
-        with open(output, "w", encoding="utf-8") as f:
-            generate_report(survey, segments, anomalies, output=f)
+        with open(output, "w", encoding="utf-8", newline="") as f:
+            generate_report(survey, segments, anomalies, output=f, fmt=format)
         console.print(f"[green]✓ 报告已保存至 {output}[/green]")
     else:
-        text = generate_report(survey, segments, anomalies)
+        text = generate_report(survey, segments, anomalies, fmt=format)
         console.print(text)
 
 
