@@ -1,0 +1,17 @@
+[project]
+name = "survey-summary-cli"
+version = "0.1.0"
+description = "问卷结果快速归纳工具：分段统计、异常答案标记和文本报告"
+requires-python = ">=3.10"
+dependencies = [
+    "typer>=0.12",
+    "rich>=13",
+    "pandas>=2.1",
+]
+
+[project.scripts]
+survey = "survey_summary.cli:app"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
